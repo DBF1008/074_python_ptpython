@@ -63,6 +63,7 @@ if TYPE_CHECKING:
     from .python_input import PythonInput
 
 HISTORY_COUNT = 2000
+HISTORY_FILTER_BUFFER = "history-filter-buffer"
 
 __all__ = ["HistoryLayout", "PythonHistory"]
 
@@ -86,6 +87,21 @@ Typical usage
    REPL and show these lines as the current input. They
    can still be edited from there.
 
+Filtering
+---------
+
+Press ``Ctrl-F`` to focus the filter bar. Type a keyword
+to narrow the history to entries containing that text.
+Multi-line statements are kept together: if any line in
+an entry matches, the full entry is shown.
+
+Selections are preserved when you change the filter. Lines
+you already selected remain selected even if they are
+temporarily hidden by a filter.
+
+Press ``Enter`` or ``Escape`` in the filter bar to return
+focus to the history pane.
+
 Key bindings
 ------------
 
@@ -97,6 +113,7 @@ Additional bindings:
 - ``Space``: Select or delect a line.
 - ``Tab``: Move the focus between the history and input
   pane. (Alternative: ``Ctrl-W``)
+- ``Ctrl-F``: Focus the filter bar.
 - ``Ctrl-C``: Cancel. Ignore the result and go back to
   the REPL. (Alternatives: ``q`` and ``Control-G``.)
 - ``Enter``: Accept the result and go back to the REPL.
@@ -111,13 +128,13 @@ Further, remember that searching works like in Emacs
 class BORDER:
     "Box drawing characters."
 
-    HORIZONTAL = "\u2501"
-    VERTICAL = "\u2503"
-    TOP_LEFT = "\u250f"
-    TOP_RIGHT = "\u2513"
-    BOTTOM_LEFT = "\u2517"
-    BOTTOM_RIGHT = "\u251b"
-    LIGHT_VERTICAL = "\u2502"
+    HORIZONTAL = "━"
+    VERTICAL = "┃"
+    TOP_LEFT = "┏"
+    TOP_RIGHT = "┓"
+    BOTTOM_LEFT = "┗"
+    BOTTOM_RIGHT = "┛"
+    LIGHT_VERTICAL = "│"
 
 
 def _create_popup_window(title: str, body: Container) -> Frame:
@@ -163,11 +180,35 @@ class HistoryLayout:
             preview_search=True,
         )
 
+        self.filter_buffer_control = BufferControl(
+            buffer=history.filter_buffer,
+        )
+
         history_window = Window(
             content=self.history_buffer_control,
             wrap_lines=False,
             left_margins=[HistoryMargin(history)],
             scroll_offsets=ScrollOffsets(top=2, bottom=2),
+        )
+
+        filter_bar = ConditionalContainer(
+            content=VSplit(
+                [
+                    Window(
+                        content=FormattedTextControl(
+                            [("class:filter-toolbar.label", " Filter: ")]
+                        ),
+                        width=D.exact(9),
+                        style="class:filter-toolbar",
+                    ),
+                    Window(
+                        content=self.filter_buffer_control,
+                        height=D.exact(1),
+                        style="class:filter-toolbar.text",
+                    ),
+                ]
+            ),
+            filter=Condition(lambda: True),
         )
 
         self.root_container = HSplit(
@@ -178,6 +219,7 @@ class HistoryLayout:
                     align=WindowAlign.CENTER,
                     style="class:status-toolbar",
                 ),
+                filter_bar,
                 FloatContainer(
                     content=VSplit(
                         [
@@ -250,6 +292,8 @@ def _get_bottom_toolbar_fragments(history: PythonHistory) -> StyleAndTextTuples:
             ("class:status-toolbar", " Toggle "),
             ("class:status-toolbar.key", "[Tab]", tab),
             ("class:status-toolbar", " Focus ", tab),
+            ("class:status-toolbar.key", "[Ctrl-F]"),
+            ("class:status-toolbar", " Filter "),
             ("class:status-toolbar.key", "[Enter]"),
             ("class:status-toolbar", " Accept "),
             ("class:status-toolbar.key", "[F1]", f1),
@@ -278,6 +322,7 @@ class HistoryMargin(Margin):
 
         lines_starting_new_entries = self.history_mapping.lines_starting_new_entries
         selected_lines = self.history_mapping.selected_lines
+        display_to_original = self.history_mapping.display_to_original
 
         current_lineno = document.cursor_position_row
 
@@ -294,7 +339,8 @@ class HistoryMargin(Margin):
             else:
                 char = " "
 
-            if line_number in selected_lines:
+            original = display_to_original.get(line_number) if line_number is not None else None
+            if original is not None and original in selected_lines:
                 t = "class:history-line,selected"
             else:
                 t = "class:history-line"
@@ -386,6 +432,8 @@ class GrayExistingText(Processor):
 class HistoryMapping:
     """
     Keep a list of all the lines from the history and the selected lines.
+    Supports filtering entries by keyword while preserving multi-line
+    statement boundaries and persisting selections across filter changes.
     """
 
     def __init__(
@@ -398,32 +446,70 @@ class HistoryMapping:
         self.python_history = python_history
         self.original_document = original_document
 
-        self.lines_starting_new_entries = set()
         self.selected_lines: set[int] = set()
 
-        # Process history.
+        # Process history into structured entries.
         history_strings = python_history.get_strings()
-        history_lines: list[str] = []
+        self.all_history_lines: list[str] = []
+        self.entries: list[tuple[int, list[str]]] = []
 
         for entry_nr, entry in list(enumerate(history_strings))[-HISTORY_COUNT:]:
-            self.lines_starting_new_entries.add(len(history_lines))
+            start = len(self.all_history_lines)
+            entry_lines = entry.splitlines()
+            self.all_history_lines.extend(entry_lines)
+            self.entries.append((start, entry_lines))
 
-            for line in entry.splitlines():
-                history_lines.append(line)
-
-        if len(history_strings) > HISTORY_COUNT:
-            history_lines[0] = (
+        if len(history_strings) > HISTORY_COUNT and self.all_history_lines:
+            self.all_history_lines[0] = (
                 f"# *** History has been truncated to {HISTORY_COUNT} lines ***"
             )
+            if self.entries:
+                start, old_lines = self.entries[0]
+                self.entries[0] = (start, [self.all_history_lines[0]] + old_lines[1:])
 
-        self.history_lines = history_lines
-        self.concatenated_history = "\n".join(history_lines)
+        # Filtering state — populated by apply_filter.
+        self.history_lines: list[str] = []
+        self.concatenated_history: str = ""
+        self.lines_starting_new_entries: set[int] = set()
+        self.display_to_original: dict[int, int] = {}
+        self.original_to_display: dict[int, int] = {}
+
+        self.apply_filter("")
 
         # Line offset.
         if self.original_document.text_before_cursor:
             self.result_line_offset = self.original_document.cursor_position_row + 1
         else:
             self.result_line_offset = 0
+
+    def apply_filter(self, filter_text: str) -> None:
+        """
+        Rebuild display lines from entries matching filter_text.
+        Filters at the entry level: if any line in a multi-line entry matches,
+        all lines of that entry are shown. selected_lines is not modified.
+        """
+        lower_filter = filter_text.lower().strip()
+
+        self.history_lines = []
+        self.lines_starting_new_entries = set()
+        self.display_to_original = {}
+        self.original_to_display = {}
+
+        for start_idx, entry_lines in self.entries:
+            if lower_filter and not any(
+                lower_filter in line.lower() for line in entry_lines
+            ):
+                continue
+
+            self.lines_starting_new_entries.add(len(self.history_lines))
+            for i, line in enumerate(entry_lines):
+                display_idx = len(self.history_lines)
+                original_idx = start_idx + i
+                self.display_to_original[display_idx] = original_idx
+                self.original_to_display[original_idx] = display_idx
+                self.history_lines.append(line)
+
+        self.concatenated_history = "\n".join(self.history_lines)
 
     def get_new_document(self, cursor_pos: int | None = None) -> Document:
         """
@@ -435,9 +521,9 @@ class HistoryMapping:
         if self.original_document.text_before_cursor:
             lines.append(self.original_document.text_before_cursor)
 
-        # Selected entries from the history.
+        # Selected entries from the history (using original indices).
         for line_no in sorted(self.selected_lines):
-            lines.append(self.history_lines[line_no])
+            lines.append(self.all_history_lines[line_no])
 
         # Original text, after cursor.
         if self.original_document.text_after_cursor:
@@ -494,25 +580,28 @@ def create_key_bindings(
         Space: select/deselect line from history pane.
         """
         b = event.current_buffer
-        line_no = b.document.cursor_position_row
+        display_line_no = b.document.cursor_position_row
 
         if not history_mapping.history_lines:
-            # If we've no history, then nothing to do
             return
 
-        if line_no in history_mapping.selected_lines:
+        original_line_no = history_mapping.display_to_original.get(display_line_no)
+        if original_line_no is None:
+            return
+
+        if original_line_no in history_mapping.selected_lines:
             # Remove line.
-            history_mapping.selected_lines.remove(line_no)
+            history_mapping.selected_lines.remove(original_line_no)
             history_mapping.update_default_buffer()
         else:
             # Add line.
-            history_mapping.selected_lines.add(line_no)
+            history_mapping.selected_lines.add(original_line_no)
             history_mapping.update_default_buffer()
 
             # Update cursor position
             default_buffer = history.default_buffer
             default_lineno = (
-                sorted(history_mapping.selected_lines).index(line_no)
+                sorted(history_mapping.selected_lines).index(original_line_no)
                 + history_mapping.result_line_offset
             )
             default_buffer.cursor_position = (
@@ -521,7 +610,9 @@ def create_key_bindings(
 
         # Also move the cursor to the next line. (This way they can hold
         # space to select a region.)
-        b.cursor_position = b.document.translate_row_col_to_index(line_no + 1, 0)
+        b.cursor_position = b.document.translate_row_col_to_index(
+            display_line_no + 1, 0
+        )
 
     @handle(" ", filter=has_focus(DEFAULT_BUFFER))
     @handle("delete", filter=has_focus(DEFAULT_BUFFER))
@@ -535,11 +626,11 @@ def create_key_bindings(
 
         if line_no >= 0:
             try:
-                history_lineno = sorted(history_mapping.selected_lines)[line_no]
+                original_lineno = sorted(history_mapping.selected_lines)[line_no]
             except IndexError:
                 pass  # When `selected_lines` is an empty set.
             else:
-                history_mapping.selected_lines.remove(history_lineno)
+                history_mapping.selected_lines.remove(original_lineno)
 
             history_mapping.update_default_buffer()
 
@@ -547,6 +638,7 @@ def create_key_bindings(
     main_buffer_focussed = has_focus(history.history_buffer) | has_focus(
         history.default_buffer
     )
+    filter_focussed = has_focus(history.filter_buffer)
 
     @handle("tab", filter=main_buffer_focussed)
     @handle("c-x", filter=main_buffer_focussed, eager=True)
@@ -555,6 +647,21 @@ def create_key_bindings(
     def _(event: E) -> None:
         "Select other window."
         _select_other_window(history)
+
+    @handle("c-f", filter=main_buffer_focussed)
+    def _(event: E) -> None:
+        "Focus filter bar."
+        history.app.layout.current_control = (
+            history.history_layout.filter_buffer_control
+        )
+
+    @handle("enter", filter=filter_focussed)
+    @handle("escape", filter=filter_focussed)
+    def _(event: E) -> None:
+        "Leave filter bar, return to history pane."
+        history.app.layout.current_control = (
+            history.history_layout.history_buffer_control
+        )
 
     @handle("f4")
     def _(event: E) -> None:
@@ -580,6 +687,11 @@ def create_key_bindings(
     @handle("c-g", filter=main_buffer_focussed)
     def _(event: E) -> None:
         "Cancel and go back."
+        event.app.exit(result=None)
+
+    @handle("c-c", filter=filter_focussed)
+    def _(event: E) -> None:
+        "Cancel from filter bar."
         event.app.exit(result=None)
 
     @handle("enter", filter=main_buffer_focussed)
@@ -637,6 +749,11 @@ class PythonHistory:
 
         self.help_buffer = Buffer(document=Document(HELP_TEXT, 0), read_only=True)
 
+        self.filter_buffer = Buffer(
+            name=HISTORY_FILTER_BUFFER,
+            on_text_changed=self._on_filter_changed,
+        )
+
         self.history_layout = HistoryLayout(self)
 
         self.app: Application[str] = Application(
@@ -647,6 +764,21 @@ class PythonHistory:
             mouse_support=Condition(lambda: python_input.enable_mouse_support),
             key_bindings=create_key_bindings(self, python_input, history_mapping),
         )
+
+    def _on_filter_changed(self, buffer: Buffer) -> None:
+        """Rebuild the history buffer when the filter text changes."""
+        self.history_mapping.apply_filter(buffer.text)
+
+        new_doc = Document(self.history_mapping.concatenated_history)
+        if new_doc.text:
+            new_doc = Document(
+                new_doc.text,
+                cursor_position=new_doc.cursor_position
+                + new_doc.get_start_of_line_position(),
+            )
+
+        self.history_buffer.set_document(new_doc, bypass_readonly=True)
+        self.history_mapping.update_default_buffer()
 
     def _default_buffer_pos_changed(self, _: Buffer) -> None:
         """When the cursor changes in the default buffer. Synchronize with
@@ -662,25 +794,35 @@ class PythonHistory:
                 if line_no < 0:  # When the cursor is above the inserted region.
                     raise IndexError
 
-                history_lineno = sorted(self.history_mapping.selected_lines)[line_no]
+                original_lineno = sorted(self.history_mapping.selected_lines)[line_no]
             except IndexError:
                 pass
             else:
-                self.history_buffer.cursor_position = (
-                    self.history_buffer.document.translate_row_col_to_index(
-                        history_lineno, 0
-                    )
+                display_lineno = self.history_mapping.original_to_display.get(
+                    original_lineno
                 )
+                if display_lineno is not None:
+                    self.history_buffer.cursor_position = (
+                        self.history_buffer.document.translate_row_col_to_index(
+                            display_lineno, 0
+                        )
+                    )
 
     def _history_buffer_pos_changed(self, _: Buffer) -> None:
         """When the cursor changes in the history buffer. Synchronize."""
         # Only when this buffer has the focus.
         if self.app.current_buffer == self.history_buffer:
-            line_no = self.history_buffer.document.cursor_position_row
+            display_line_no = self.history_buffer.document.cursor_position_row
+            original_line_no = self.history_mapping.display_to_original.get(
+                display_line_no
+            )
 
-            if line_no in self.history_mapping.selected_lines:
+            if (
+                original_line_no is not None
+                and original_line_no in self.history_mapping.selected_lines
+            ):
                 default_lineno = (
-                    sorted(self.history_mapping.selected_lines).index(line_no)
+                    sorted(self.history_mapping.selected_lines).index(original_line_no)
                     + self.history_mapping.result_line_offset
                 )
 
