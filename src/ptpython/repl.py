@@ -72,6 +72,8 @@ def _get_coroutine_flag() -> int | None:
 
 COROUTINE_FLAG: int | None = _get_coroutine_flag()
 
+_MISSING = object()
+
 
 def _has_coroutine_flag(code: types.CodeType) -> bool:
     if COROUTINE_FLAG is None:
@@ -404,11 +406,17 @@ class PythonRepl(PythonInput):
         output.write("\rKeyboardInterrupt\n\n")
         output.flush()
 
+    _INJECTED_KEYS: tuple[str, ...] = ("get_ptpython", "exit")
+
     def _add_to_namespace(self) -> None:
         """
         Add ptpython built-ins to global namespace.
         """
         globals = self.get_globals()
+
+        self._saved_namespace: dict[str, Any] = {}
+        for key in self._INJECTED_KEYS:
+            self._saved_namespace[key] = globals.get(key, _MISSING)
 
         # Add a 'get_ptpython', similar to 'get_ipython'
         def get_ptpython() -> PythonInput:
@@ -419,10 +427,17 @@ class PythonRepl(PythonInput):
 
     def _remove_from_namespace(self) -> None:
         """
-        Remove added symbols from the globals.
+        Remove added symbols from the globals and restore any originals.
         """
         globals = self.get_globals()
-        del globals["get_ptpython"]
+        saved = getattr(self, "_saved_namespace", {})
+
+        for key in self._INJECTED_KEYS:
+            original = saved.get(key, _MISSING)
+            if original is _MISSING:
+                globals.pop(key, None)
+            else:
+                globals[key] = original
 
     def print_paginated_formatted_text(
         self,
