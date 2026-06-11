@@ -1,0 +1,749 @@
+CHANGELOG
+=========
+
+3.0.32: 2025-11-20
+------------------
+
+Fixes:
+- Use ANSI colors (instead of RGB colors) for the default code theme. This
+  improves the chances of having a better contrast with the background color,
+  because we now use what is configured in the terminal emulator. The theme is
+  called 'default-ansi' and exists alongside 'default'.
+
+
+3.0.31: 2025-08-27
+------------------
+
+Fixes:
+- Add `patch_stdout_raw` parameter to `embed()`.
+- Fix repl.min_brightness and repl.max_brightness config in history.
+- Fix positioning of exit confirmation (compatibility with latest prompt_toolkit).
+
+
+3.0.30: 2025-04-15
+------------------
+
+New features:
+- Show exception cause/context when printing chained exceptions.
+- Reworked project layout and use pyproject.toml instead of setup.py.
+
+Breaking changes:
+- Drop Python 3.7 support.
+
+
+3.0.29: 2024-07-22
+------------------
+
+Fixes:
+- Further improve performance of dictionary completions.
+
+
+3.0.28: 2024-07-22
+------------------
+
+New features:
+- Custom 'exit' function to return from REPL that
+  * doesn't terminate `sys.stdin` when `exit` is called (important for
+    `embed()`).
+  * doesn't require to be called with parentheses.
+
+Fixes:
+- Clean up signatures on control-c.
+
+
+3.0.27: 2024-05-27
+------------------
+
+- Limit number of completions to 5k (for performance).
+- Several typing fixes.
+
+
+3.0.26: 2024-02-06
+------------------
+
+Fixes:
+- Handle `GeneratorExit` exception when leaving the paginator.
+
+
+3.0.25: 2023-12-14
+------------------
+
+Fixes:
+- Fix handling of 'config file does not exist' when embedding ptpython.
+
+
+3.0.24: 2023-12-13
+------------------
+
+Fixes:
+- Don't show "Impossible to read config file" warnings when no config file was
+  passed to `run_config()`.
+- IPython integration fixes:
+  * Fix top-level await in IPython.
+  * Fix IPython `DeprecationWarning`.
+- Output printing fixes:
+  * Paginate exceptions if pagination is enabled.
+  * Handle big outputs without running out of memory.
+- Asyncio REPL improvements:
+  * From now on, passing `--asyncio` is required to activate the asyncio-REPL.
+    This will ensure that an event loop is created at the start in which we can
+    run top-level await statements.
+  * Use `get_running_loop()` instead of `get_event_loop()`.
+  * Better handling of `SystemExit` and control-c in the async REPL.
+
+
+3.0.23: 2023-02-22
+------------------
+
+Fixes:
+- Don't print exception messages twice for unhandled exceptions.
+- Added cursor shape support.
+
+Breaking changes:
+- Drop Python 3.6 support.
+
+
+3.0.22: 2022-12-06
+------------------
+
+New features:
+- Improve rendering performance when there are many completions.
+
+
+3.0.21: 2022-11-25
+------------------
+
+New features:
+- Make ptipython respect more config changes.
+  (See: https://github.com/prompt-toolkit/ptpython/pull/110 )
+- Improved performance of `DictionaryCompleter` for slow mappings.
+
+Fixes:
+- Call `super()` in `PythonInputFilter`. This will prevent potentially breakage
+  with an upcoming prompt_toolkit change.
+  (See: https://github.com/prompt-toolkit/python-prompt-toolkit/pull/1690 )
+- Improved type annotations.
+- Added `py.typed` to the `package_data`.
+
+
+3.0.20: 2021-09-14
+------------------
+
+New features:
+- For `DictionaryCompleter`: show parentheses after methods.
+
+Fixes:
+- Don't crash when trying to complete broken mappings in `DictionaryCompleter`.
+- Don't crash when an older version of `black` is installed that is not
+  compatible.
+
+
+3.0.19: 2021-07-08
+------------------
+
+Fixes:
+- Fix handling of `SystemExit` (fixes "ValueError: I/O operation on closed
+  file").
+- Allow usage of `await` in assignment expressions or for-loops.
+
+
+3.0.18: 2021-06-26
+------------------
+
+Fixes:
+- Made "black" an optional dependency.
+
+
+3.0.17: 2021-03-22
+------------------
+
+Fixes:
+- Fix leaking file descriptors due to not closing the asyncio event loop after
+  reading input in a thread.
+- Fix race condition during retrieval of signatures.
+
+
+3.0.16: 2021-02-11
+------------------
+
+(Commit 7f619e was missing in previous release.)
+
+Fixes:
+- Several fixes to the completion code:
+  * Give dictionary completions priority over path completions.
+  * Always call non-fuzzy completer after fuzzy completer to prevent that some
+    completions were missed out if the fuzzy completer doesn't find them.
+
+
+3.0.15: 2021-02-11
+------------------
+
+New features:
+- When pressing control-w, only delete characters until a punctuation.
+
+Fixes:
+- Fix `AttributeError` during retrieval of signatures with type annotations.
+
+
+3.0.14: 2021-02-10
+------------------
+
+New features:
+- Display of signature and completion drop down together.
+- If `DictionaryCompleter` is enabled, also retrieve signatures when Jedi
+  fails, using the same logic.
+- List function parameters first and private attributes at the end in the
+  completion menu.
+- Cleanup of the completion code.
+
+Fixes:
+- Handle exceptions raised when `repr()` is called.
+- Fix leakage of `exc_info` from eval to exec call.
+- Fix handling of `KeyboardInterrupt` in REPL during evaluation of `__repr__`.
+- Fix style for signature toolbar.
+- Hide signature when sidebar is visible.
+
+
+3.0.13: 2021-01-26
+------------------
+
+New features:
+- Added 'print all' option to pager.
+- Improve handling of indented code:
+  * Allow multiline input to be indented as a whole (we will unindent before
+    executing).
+  * Correctly visualize tabs (instead of ^I, which happens when pasted in
+    bracketed paste).
+
+Fixes:
+- Fix line ending bug in pager.
+
+
+3.0.12: 2021-01-24
+------------------
+
+New features:
+- Expose a `get_ptpython` function in the global namespace, to get programmatic
+  access to the REPL.
+- Expose `embed()` at the top level of the package. Make it possible to do
+  `from ptpython import embed`.
+
+Fixes:
+- Properly handle exceptions when trying to access `__pt_repr__`.
+- Properly handle `SystemExit`.
+
+
+3.0.11: 2021-01-20
+------------------
+
+New features:
+- Add support for top-level await.
+- Refactoring of event loop usage:
+
+  * The ptpython input UI will now run in a separate thread. This makes it
+    possible to properly embed ptpython in an asyncio application, without
+    having to deal with nested event loops (which asyncio does not support).
+
+  * The "eval" part doesn't anymore take place within a ptpython coroutine, so
+    it can spawn its own loop if needed. This also fixes `asyncio.run()` usage
+    in the REPL, which was broken before.
+
+- Added syntax highlighting and autocompletion for !-style system commands.
+
+Fixes:
+- Remove unexpected additional line after output.
+- Fix system prompt. Accept !-style inputs again.
+- Don't execute PYTHONSTARTUP when -i flag was given.
+
+
+3.0.10: 2021-01-13
+------------------
+
+Fixes:
+- Do dictionary completion on Sequence and Mapping objects (from
+  collections.abc). Note that dictionary completion is still turned off by
+  default.
+
+
+3.0.9: 2021-01-10
+-----------------
+
+New features:
+- Allow replacing `PythonInput.completer` at runtime (useful for tools build on
+  top of ptpython).
+- Show REPL title in pager.
+
+
+3.0.8: 2021-01-05
+-----------------
+
+New features:
+- Optional output formatting using Black.
+- Optional pager for displaying outputs that don't fit on the screen.
+- Added --light-bg and --dark-bg flags to automatically optimize the brightness
+  of the colors according to the terminal background.
+- Add `PTPYTHON_CONFIG_HOME` for explicitly setting the config directory.
+- Show completion suffixes (like '(' for functions).
+
+Fixes:
+- Fix dictionary completion on Pandas objects.
+- Stop using deprecated Jedi functions.
+
+
+3.0.7: 2020-09-25
+-----------------
+
+New features:
+- Option to show/hide private attributes during a completion
+- Added `insert_blank_line_after_input` option similar to
+  `insert_blank_line_after_output`.
+
+Fixes:
+- Fixed some formatting issues of `__pt_repr__`.
+- Abbreviate completion meta information for dictionary completer if needed.
+
+
+3.0.6: 2020-09-23
+-----------------
+
+New features:
+- (Experimental) support for `__pt_repr__` methods. If objects implement this
+  method, this will be used to print the result in the REPL instead of the
+  normal `__repr__`.
+- Added py.typed file, to enable type checking for applications that are
+  embedding ptpython.
+
+
+3.0.5: 2020-08-10
+-----------------
+
+Fixes:
+- Handle bug in dictionary completion when numeric keys are used.
+
+
+3.0.4: 2020-08-10
+-----------------
+
+New features:
+- Allow leading whitespace before single line expressions.
+- Show full syntax error in validator.
+- Added `vi_start_in_navigation_mode` and `vi_keep_last_used_mode` options.
+
+Fixes:
+- Improved dictionary completion: handle keys that contain spaces and don't
+  recognize numbers as variable names.
+- Fix in exit confirmation.
+
+
+3.0.3: 2020-07-10
+-----------------
+
+Fixes:
+- Sort attribute names for `DictionaryCompleter` and move underscored
+  attributes to the end.
+- Handle unhandled exceptions in `get_compiler_flags`.
+- Improved `run_async` code.
+- Fix --version parameter.
+
+
+3.0.2: 2020-04-14
+-----------------
+
+New features:
+- Improved custom dictionary completion:
+    * Also complete list indexes.
+    * Also complete attributes after doing a dictionary lookup.
+    * Also complete iterators in a for-loop.
+- Added a 'title' option, so that applications embedding ptpython can set a
+  title in the status bar.
+
+
+3.0.1: 2020-02-24
+-----------------
+
+- Fix backwards-compatibility of the `run_config` function. (used by
+  django-extensions).
+- Fix input mode in status bar for block selection.
+
+
+3.0.0: 2020-01-29
+-----------------
+
+Upgrade to prompt_toolkit 3.0.
+Requires at least Python 3.6.
+
+New features:
+- Uses XDG base directory specification.
+
+
+2.0.5: 2019-10-09
+-----------------
+
+New features:
+- Added dictionary completer (off by default).
+- Added fuzzy completion (off by default).
+- Highlight keywords in completion dropdown menu.
+- Enable universal wheels.
+
+Fixes:
+- Fixed embedding repl as asyncio coroutine.
+- Fixed patching stdout in embedded repl.
+- Fixed ResourceWarning in setup.py.
+
+
+2.0.4: 2018-10-30
+-----------------
+
+- Fixed ptipython.
+- Fixed config: setting of color depth.
+- Fixed auto-suggest key bindings.
+- Fixed Control-D key binding for exiting REPL when (confirm_exit=False).
+- Correctly focus/unfocus sidebar.
+- Fixed open_in_editor and suspend key bindings.
+
+
+2.0.3: 2018-10-12
+-----------------
+
+- Allow changing the min/max brightness.
+- Some changes for compatibility with the latest prompt_toolkit.
+
+2.0.2: 2018-09-30
+-----------------
+
+Fixes:
+- Don't crash the history browser when there was no history.
+- Set last exception in the sys module, when an exception was raised.
+- Require prompt_toolkit 2.0.5.
+
+
+2.0.1: 2018-09-30
+-----------------
+
+Upgrade to prompt_toolkit 2.0.x.
+
+
+0.36: 2016-10-16
+----------------
+
+New features:
+- Support for editing in Vi block mode. (Only enabled for
+  prompt_toolkit>=1.0.8.)
+
+Fixes:
+- Handle two Jedi crashes. (GitHub ptpython issues #136 and #91.)
+
+0.35: 2016-07-19
+----------------
+
+Fixes:
+- Fix in completer. Don't hang when pasting a long string with many
+  backslashes.
+- Fix Python2 bug: crash when filenames contain non-ascii characters.
+- Added `pt[i]pythonX` and `pt[i]pythonX.X` commands.
+- Compatibility with IPython 5.0.
+
+
+0.34: 2016-05-06
+---------------
+
+Bugfix in ptipython: reset input buffer before every read in run().
+
+
+0.33: 2016-05-05
+---------------
+
+Upgrade to prompt_toolkit 1.0.0
+
+Improvements:
+- Unindent after typing 'pass'.
+- Make it configurable whether or not a blank line has to be inserted after the output.
+
+
+0.32: 2016-03-29
+---------------
+
+Fixes:
+- Fixed bug when PYTHONSTARTUP was not found.
+- Support $PYTHONSTARTUP for ptipython.
+
+
+0.31: 2016-03-14
+---------------
+
+Upgrade to prompt_toolkit 0.60
+
+
+0.30: 2016-02-27
+---------------
+
+Upgrade to prompt_toolkit 0.59
+
+
+0.29: 2016-02-24
+----------------
+
+Upgrade to prompt_toolkit 0.58
+
+New features:
+- Improved mouse support
+
+
+0.28: 2016-01-04
+----------------
+
+Upgrade to prompt_toolkit 0.57
+
+
+0.27: 2016-01-03
+----------------
+
+Upgrade to prompt_toolkit 0.56
+
+
+0.26: 2016-01-03
+----------------
+
+Upgrade to prompt_toolkit 0.55
+
+Fixes:
+- Handle several bugs in Jedi.
+- Correctly handle sys.argv when pt(i)python is started with --interactive.
+- Support for 24bit true color.
+- Take compiler flags into account for ptipython.
+
+
+0.25: 2015-10-29
+----------------
+
+Upgrade to prompt_toolkit 0.54
+
+Fixes:
+- Consider input multiline when there's a colon at the end of the line.
+- Handle bug in Jedi.
+- Enable search bindings in history browser.
+
+
+0.24: 2015-09-24
+----------------
+
+Upgrade to prompt_toolkit 0.52
+
+
+0.23: 2015-09-24
+----------------
+
+Upgrade to prompt_toolkit 0.51
+
+New features:
+- Mouse support
+- Fish style auto suggestion.
+- Optionally disabling of line wraps.
+- Use Python3Lexer for Python 3.
+
+
+0.22: 2015-09-06
+----------------
+
+Upgrade to prompt_toolkit 0.50
+
+Fixes:
+- Correctly accept file parameter in the print function of
+  asyncssh_repl.ReplSSHServerSession.
+- Create config directory if it doesn't exist yet (For IPython entry point.)
+
+New features:
+- Implementation of history-selection: a tool to select lines from the history.
+- Make exit message configurable.
+- Improve start-up time: Lazy load completer grammar and lazy-import Jedi.
+- Make multi-column the default completion visualisation.
+- Implementation of a custom prompts. In_tokens and out_tokens can be
+  customized.
+- Made an option to show/hide highlighting for matching parenthesis.
+- Some styling improvements.
+
+
+0.21: 2015-08-08
+---------------
+
+Upgrade to prompt_toolkit 0.46
+
+Fixes:
+- Correctly add current directory to sys.path.
+- Only show search highlighting when the search is the current input buffer.
+- Styling fix.
+
+
+0.20: 2015-07-30
+---------------
+
+Upgrade to prompt_toolkit 0.45
+
+
+0.19: 2015-07-30
+---------------
+
+Upgrade to prompt_toolkit 0.44
+
+New features:
+- Added --interactive option for ptipython.
+- A few style improvements.
+
+
+0.18: 2015-07-15
+---------------
+
+Fixes:
+- Python 2.6 compatibility.
+
+
+0.17: 2015-07-15
+---------------
+
+Upgrade to prompt_toolkit 0.43
+
+New features:
+- Integration with Tk eventloop. (This makes turtle and other Tk stuff work
+  again from the REPL.)
+- Multi column completion visualisation.
+
+
+0.16: 2015-06-25
+---------------
+
+Upgrade to prompt_toolkit 0.42
+
+Fixes:
+- Workaround for Jedi bug. (Signatures of functions with keyword-only arguments.)
+- Correctly show traceback on Python 3.
+- Better styling of the options sidebar.
+
+New features:
+- Exit REPL when input starts with Control-Z.
+- Set terminal title.
+- Display help text in options sidebar.
+- Better colorscheme for Windows.
+
+
+0.15: 2015-06-20
+---------------
+
+Upgrade to prompt_toolkit 0.41
+
+Fixes:
+- Correct tokens for IPython prompt.
+- Syntax fix in asyncssh_repl.
+
+
+0.14: 2015-06-16
+---------------
+
+Fix:
+- Correct dependency for prompt_toolkit.
+
+0.13: 2015-06-15
+---------------
+
+New features:
+- Upgrade to prompt_toolkit 0.40
+- Options sidebar.
+- Custom color schemes.
+- Syntax highlighting of the output.
+- Input validation can now be turned off.
+- Determine compiler flags dynamically. (Fixes importing unicode_literals).
+- Exit confirmation and dialog.
+- Autocompletion of IPython %cat command.
+- Correctly render tracebacks on Windows.
+
+0.12: 2015-06-04
+---------------
+
+Upgrade to prompt_toolkit 0.39
+
+0.11: 2015-05-31
+---------------
+
+New features:
+- Upgrade to prompt-toolkit 0.38.
+- Upgrade to Jedi 0.9.0
+- Fixed default globals for repl (correct __name, __builtins__, etc...)
+- Display deprecation warnings in the REPL.
+- Added configuration support.
+- Added asyncio-ssh-python-embed example.
+
+
+0.10: 2015-05-11
+---------------
+
+Upgrade to prompt-toolkit 0.37.
+
+
+0.9: 2015-05-07
+---------------
+
+Upgrade to prompt-toolkit 0.35.
+
+
+0.8: 2015-04-26
+---------------
+
+Fixed:
+- eval() doesn't run using unicode_literals anymore.
+- Upgrade to prompt-toolkit 0.34.
+
+
+0.7: 2015-04-25
+---------------
+
+Fixed:
+- Upgrade to prompt-toolkit 0.33.
+
+New features:
+- Added complete_while_typing option.
+
+
+0.6: 2015-04-22
+---------------
+
+Fixed:
+- Upgrade to prompt-toolkit 0.32 which has many new features.
+
+Changes:
+- Removal of tab pages + clean up.
+- Pressing enter twice will now always automatically execute the input.
+- Improved Control-D key binding.
+- Hide docstring by default.
+
+
+0.5: 2015-01-30
+---------------
+
+Fixed:
+- Tab autocompletion on first line.
+- Upgrade to prompt-toolkit 0.31
+
+New features:
+- Simple autocompletion for IPython magics.
+
+0.4: 2015-01-26
+---------------
+
+Fixed:
+- Upgrade to prompt-toolkit 0.30
+
+0.3: 2015-01-25
+---------------
+
+Fixed:
+- Upgrade to prompt-toolkit 0.28
+
+0.2: 2015-01-25
+---------------
+
+Moved ptpython code from prompt-toolkit inside this repository.
+
+0.1: 2014-09-29
+---------------
+
+Initial ptpython version. (Source code was still in the
+prompt-toolkit repository itself.)
