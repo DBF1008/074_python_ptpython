@@ -364,17 +364,15 @@ class GrayExistingText(Processor):
 
     def __init__(self, history_mapping: HistoryMapping) -> None:
         self.history_mapping = history_mapping
-        self._lines_before = len(
-            history_mapping.original_document.text_before_cursor.splitlines()
-        )
 
     def apply_transformation(
         self, transformation_input: TransformationInput
     ) -> Transformation:
         lineno = transformation_input.lineno
         fragments = transformation_input.fragments
+        offset = self.history_mapping.result_line_offset
 
-        if lineno < self._lines_before or lineno >= self._lines_before + len(
+        if lineno < offset or lineno >= offset + len(
             self.history_mapping.selected_lines
         ):
             text = fragment_list_to_text(fragments)
@@ -404,6 +402,13 @@ class HistoryMapping:
         # Process history.
         history_strings = python_history.get_strings()
         history_lines: list[str] = []
+        truncated = len(history_strings) > HISTORY_COUNT
+
+        if truncated:
+            self.lines_starting_new_entries.add(0)
+            history_lines.append(
+                f"# *** History has been truncated to {HISTORY_COUNT} entries ***"
+            )
 
         for entry_nr, entry in list(enumerate(history_strings))[-HISTORY_COUNT:]:
             self.lines_starting_new_entries.add(len(history_lines))
@@ -411,17 +416,19 @@ class HistoryMapping:
             for line in entry.splitlines():
                 history_lines.append(line)
 
-        if len(history_strings) > HISTORY_COUNT:
-            history_lines[0] = (
-                f"# *** History has been truncated to {HISTORY_COUNT} lines ***"
-            )
-
         self.history_lines = history_lines
         self.concatenated_history = "\n".join(history_lines)
 
         # Line offset.
         if self.original_document.text_before_cursor:
-            self.result_line_offset = self.original_document.cursor_position_row + 1
+            if self.original_document.text_before_cursor.endswith("\n"):
+                self.result_line_offset = (
+                    self.original_document.cursor_position_row
+                )
+            else:
+                self.result_line_offset = (
+                    self.original_document.cursor_position_row + 1
+                )
         else:
             self.result_line_offset = 0
 
@@ -429,22 +436,21 @@ class HistoryMapping:
         """
         Create a `Document` instance that contains the resulting text.
         """
-        lines = []
+        before = self.original_document.text_before_cursor
+        after = self.original_document.text_after_cursor
 
-        # Original text, before cursor.
-        if self.original_document.text_before_cursor:
-            lines.append(self.original_document.text_before_cursor)
+        selected = [self.history_lines[ln] for ln in sorted(self.selected_lines)]
 
-        # Selected entries from the history.
-        for line_no in sorted(self.selected_lines):
-            lines.append(self.history_lines[line_no])
+        if not selected:
+            text = before + after
+        else:
+            selected_text = "\n".join(selected)
+            if before and not before.endswith("\n"):
+                selected_text = "\n" + selected_text
+            if after and not after.startswith("\n"):
+                selected_text = selected_text + "\n"
+            text = before + selected_text + after
 
-        # Original text, after cursor.
-        if self.original_document.text_after_cursor:
-            lines.append(self.original_document.text_after_cursor)
-
-        # Create `Document` with cursor at the right position.
-        text = "\n".join(lines)
         if cursor_pos is not None and cursor_pos > len(text):
             cursor_pos = len(text)
         return Document(text, cursor_pos)
