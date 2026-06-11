@@ -19,7 +19,7 @@ from prompt_toolkit.key_binding.bindings.named_commands import get_by_name
 from prompt_toolkit.key_binding.key_processor import KeyPressEvent
 from prompt_toolkit.keys import Keys
 
-from .utils import document_is_multiline_python
+from .utils import document_is_multiline_python, _cursor_in_string
 
 if TYPE_CHECKING:
     from typing_extensions import TypeAlias
@@ -319,10 +319,15 @@ def auto_newline(buffer: Buffer) -> None:
     else:
         # Go to new line, but also add indentation.
         current_line = buffer.document.current_line_before_cursor.rstrip()
+
+        in_string = _cursor_in_string(
+            buffer.document.text, buffer.document.cursor_position
+        )
+
         insert_text("\n")
 
         # Unident if the last line ends with 'pass', remove four spaces.
-        unindent = current_line.rstrip().endswith(" pass")
+        unindent = not in_string and current_line.rstrip().endswith(" pass")
 
         # Copy whitespace from current line
         current_line2 = current_line[4:] if unindent else current_line
@@ -334,6 +339,6 @@ def auto_newline(buffer: Buffer) -> None:
                 break
 
         # If the last line ends with a colon, add four extra spaces.
-        if current_line[-1:] == ":":
+        if not in_string and current_line[-1:] == ":":
             for x in range(4):
                 insert_text(" ")

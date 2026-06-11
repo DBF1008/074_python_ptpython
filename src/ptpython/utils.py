@@ -25,6 +25,7 @@ __all__ = [
     "get_jedi_script_from_document",
     "document_is_multiline_python",
     "unindent_code",
+    "unindent_code_with_prefix",
 ]
 
 
@@ -36,7 +37,7 @@ def has_unclosed_brackets(text: str) -> bool:
     stack = []
 
     # Ignore braces inside strings
-    text = re.sub(r"""('[^']*'|"[^"]*")""", "", text)  # XXX: handle escaped quotes.!
+    text = _strip_string_literals(text)
 
     for c in reversed(text):
         if c in "])}":
@@ -89,7 +90,45 @@ def get_jedi_script_from_document(
         return None
 
 
-_multiline_string_delims = re.compile("""[']{3}|["]{3}""")
+_string_literal_re = re.compile(
+    r"'''(?:[^\\]|\\.)*?'''|"
+    r'"""(?:[^\\]|\\.)*?"""|'
+    r"'''(?:[^\\]|\\.)*$|"
+    r'"""(?:[^\\]|\\.)*$|'
+    r"'(?:[^'\\]|\\.)*'|"
+    r'"(?:[^"\\]|\\.)*"',
+    re.DOTALL,
+)
+
+
+def _strip_string_literals(text: str) -> str:
+    return _string_literal_re.sub("", text)
+
+
+def _ends_in_unclosed_triple_string(text: str) -> bool:
+    last_match = None
+    for match in _string_literal_re.finditer(text):
+        last_match = match
+    if last_match is None:
+        return False
+    if last_match.end() != len(text):
+        return False
+    matched = last_match.group()
+    prefix = matched[:3]
+    if prefix not in ("'''", '"""'):
+        return False
+    if len(matched) >= 6 and matched[-3:] == prefix:
+        return False
+    return True
+
+
+def _cursor_in_string(text: str, cursor_pos: int) -> bool:
+    for match in _string_literal_re.finditer(text):
+        if match.start() < cursor_pos <= match.end():
+            return True
+        if match.start() >= cursor_pos:
+            break
+    return False
 
 
 def document_is_multiline_python(document: Document) -> bool:
@@ -101,14 +140,7 @@ def document_is_multiline_python(document: Document) -> bool:
         """
         ``True`` if we're inside a multiline string at the end of the text.
         """
-        delims = _multiline_string_delims.findall(document.text)
-        opening = None
-        for delim in delims:
-            if opening is None:
-                opening = delim
-            elif delim == opening:
-                opening = None
-        return bool(opening)
+        return _ends_in_unclosed_triple_string(document.text)
 
     if "\n" in document.text or ends_in_multiline_string():
         return True
@@ -180,15 +212,20 @@ def unindent_code(text: str) -> str:
     """
     Remove common leading whitespace when all lines are indented.
     """
+    result, _ = unindent_code_with_prefix(text)
+    return result
+
+
+def unindent_code_with_prefix(text: str) -> tuple[str, int]:
+    """
+    Remove common leading whitespace when all lines are indented.
+    Returns (unindented_text, prefix_length).
+    """
     lines = text.splitlines(keepends=True)
-
-    # Look for common prefix.
     common_prefix = _common_whitespace_prefix(lines)
-
-    # Remove indentation.
-    lines = [line[len(common_prefix) :] for line in lines]
-
-    return "".join(lines)
+    prefix_len = len(common_prefix)
+    lines = [line[prefix_len:] for line in lines]
+    return "".join(lines), prefix_len
 
 
 def _common_whitespace_prefix(strings: Iterable[str]) -> str:

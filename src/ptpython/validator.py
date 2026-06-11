@@ -5,7 +5,7 @@ from typing import Callable
 from prompt_toolkit.document import Document
 from prompt_toolkit.validation import ValidationError, Validator
 
-from .utils import unindent_code
+from .utils import unindent_code_with_prefix
 
 __all__ = ["PythonValidator"]
 
@@ -25,7 +25,7 @@ class PythonValidator(Validator):
         """
         Check input for Python syntax errors.
         """
-        text = unindent_code(document.text)
+        text, prefix_len = unindent_code_with_prefix(document.text)
 
         # When the input starts with Ctrl-Z, always accept. This means EOF in a
         # Python REPL.
@@ -45,12 +45,8 @@ class PythonValidator(Validator):
 
             compile(text, "<input>", "exec", flags=flags, dont_inherit=True)
         except SyntaxError as e:
-            # Note, the 'or 1' for offset is required because Python 2.7
-            # gives `None` as offset in case of '4=4' as input. (Looks like
-            # fixed in Python 3.)
-            # TODO: This is not correct if indentation was removed.
             index = document.translate_row_col_to_index(
-                (e.lineno or 1) - 1, (e.offset or 1) - 1
+                (e.lineno or 1) - 1, (e.offset or 1) - 1 + prefix_len
             )
             raise ValidationError(index, f"Syntax Error: {e}")
         except TypeError as e:
