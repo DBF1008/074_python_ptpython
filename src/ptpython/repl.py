@@ -32,6 +32,7 @@ from typing import (
     overload,
 )
 
+import appdirs
 from prompt_toolkit.formatted_text import OneStyleAndTextTuple
 from prompt_toolkit.patch_stdout import patch_stdout as patch_stdout_context
 from prompt_toolkit.shortcuts import (
@@ -54,6 +55,7 @@ except ImportError:
 __all__ = [
     "PythonRepl",
     "enable_deprecation_warnings",
+    "get_default_config_file",
     "run_config",
     "embed",
     "exit",
@@ -450,6 +452,28 @@ def enable_deprecation_warnings() -> None:
 DEFAULT_CONFIG_FILE = "~/.config/ptpython/config.py"
 
 
+def get_default_config_file() -> str:
+    """
+    Locate the default ptpython config file using the same resolution order
+    as the CLI entry point:
+
+    1. ``$PTPYTHON_CONFIG_HOME/config.py`` (if the env-var is set)
+    2. ``<appdirs-config-dir>/config.py``
+    3. ``~/.ptpython/config.py``  (legacy fallback, if it exists on disk)
+    """
+    config_dir = os.environ.get(
+        "PTPYTHON_CONFIG_HOME",
+        appdirs.user_config_dir("ptpython", "prompt_toolkit"),
+    )
+    config_file = os.path.join(config_dir, "config.py")
+
+    legacy_config_file = os.path.join(os.path.expanduser("~/.ptpython"), "config.py")
+    if not os.path.exists(config_file) and os.path.exists(legacy_config_file):
+        return legacy_config_file
+
+    return config_file
+
+
 def run_config(repl: PythonInput, config_file: str | None = None) -> None:
     """
     Execute REPL config file.
@@ -527,6 +551,8 @@ def embed(
     patch_stdout: bool = ...,
     patch_stdout_raw: bool = ...,
     return_asyncio_coroutine: Literal[False] = ...,
+    load_config: bool = ...,
+    load_startup: bool = ...,
 ) -> None: ...
 
 
@@ -542,6 +568,8 @@ def embed(
     patch_stdout: bool = ...,
     patch_stdout_raw: bool = ...,
     return_asyncio_coroutine: Literal[True] = ...,
+    load_config: bool = ...,
+    load_startup: bool = ...,
 ) -> Coroutine[Any, Any, None]: ...
 
 
@@ -556,6 +584,8 @@ def embed(
     patch_stdout: bool = False,
     patch_stdout_raw: bool = False,
     return_asyncio_coroutine: bool = False,
+    load_config: bool = False,
+    load_startup: bool = False,
 ) -> None | Coroutine[Any, Any, None]:
     """
     Call this to embed  Python shell at the current point in your program.
@@ -571,7 +601,19 @@ def embed(
     :param patch_stdout:  When true, patch `sys.stdout` so that background
         threads that are printing will print nicely above the prompt.
     :param patch_stdout_raw:  When true, patch_stdout will not escape/remove vt100 terminal escape sequences.
+    :param load_config: When true, automatically load the user's ptpython
+        config file (same resolution as the CLI). The ``configure`` callback,
+        if provided, runs *after* the config file so it can override settings.
+    :param load_startup: When true, prepend ``$PYTHONSTARTUP`` to
+        *startup_paths* (same as the CLI).
     """
+    # Prepend PYTHONSTARTUP when requested.
+    if load_startup:
+        pythonstartup = os.environ.get("PYTHONSTARTUP")
+        if pythonstartup:
+            extra: list[str | Path] = [pythonstartup]
+            startup_paths = extra + list(startup_paths or [])
+
     # Default globals/locals
     if globals is None:
         globals = {
@@ -600,6 +642,13 @@ def embed(
 
     if title:
         repl.terminal_title = title
+
+    # Config file first, then the caller's configure callback (so it can
+    # override config-file settings — same priority order as the CLI).
+    if load_config:
+        config_file = get_default_config_file()
+        if os.path.exists(config_file):
+            run_config(repl, config_file)
 
     if configure:
         configure(repl)
