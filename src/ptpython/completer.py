@@ -4,6 +4,7 @@ import ast
 import collections.abc as collections_abc
 import inspect
 import keyword
+import os
 import re
 from enum import Enum
 from itertools import islice
@@ -184,7 +185,13 @@ class PythonCompleter(Completer):
         if complete_event.completion_requested or self._complete_path_while_typing(
             document
         ):
-            yield from self._path_completer.get_completions(document, complete_event)
+            for c in self._path_completer.get_completions(document, complete_event):
+                yield Completion(
+                    c.text,
+                    c.start_position,
+                    display=c.display,
+                    display_meta=_make_path_preview(c.text),
+                )
 
         # Do Jedi completions.
         if complete_event.completion_requested or self._complete_python_while_typing(
@@ -286,9 +293,10 @@ class JediCompleter(Completer):
                         suffix = "..."
 
                     style = _get_style_for_jedi_completion(jc)
-                    display_meta = (
-                        jc.type if style == "" else [(f"{style}-meta", jc.type)]
-                    )
+                    if style == "":
+                        display_meta = _make_jedi_preview(jc)
+                    else:
+                        display_meta = [(f"{style}-meta", jc.type)]
 
                     yield Completion(
                         jc.name_with_symbols,
@@ -599,7 +607,12 @@ class DictionaryCompleter(Completer):
             for name in names:
                 if name.startswith(attr_name):
                     suffix = get_suffix(name)
-                    yield Completion(name, -len(attr_name), display=name + suffix)
+                    yield Completion(
+                        name,
+                        -len(attr_name),
+                        display=name + suffix,
+                        display_meta=_make_attr_preview(result, name),
+                    )
 
     def _sort_attribute_names(self, names: list[str]) -> list[str]:
         """
@@ -692,3 +705,108 @@ def _get_style_for_jedi_completion(
         return "class:completion.keyword"
 
     return ""
+
+
+def _make_jedi_preview(
+    jc: jedi.api.classes.Completion,
+) -> Callable[[], str]:
+    cached: list[str] = []
+
+    def get_preview() -> str:
+        if cached:
+            return cached[0]
+        try:
+            if jc.type == "function":
+                sigs = jc.get_signatures()
+                if sigs:
+                    sig = sigs[0]
+                    params = ", ".join(p.to_string() for p in sig.params if p)
+                    sig_str = sig.to_string()
+                    ret = (
+                        sig_str.split("->")[-1].strip()
+                        if "->" in sig_str
+                        else ""
+                    )
+                    preview = f"({params})"
+                    if ret:
+                        preview += f" -> {ret}"
+                    cached.append(preview)
+                    return preview
+            desc = jc.description
+            if desc:
+                cached.append(desc)
+                return desc
+        except Exception:
+            pass
+        fallback = jc.type or ""
+        cached.append(fallback)
+        return fallback
+
+    return get_preview
+
+
+def _make_attr_preview(obj: object, attr_name: str) -> Callable[[], str]:
+    cached: list[str] = []
+
+    def get_preview() -> str:
+        if cached:
+            return cached[0]
+        try:
+            val = getattr(obj, attr_name, None)
+            if val is None:
+                cached.append("None")
+                return "None"
+            type_name = type(val).__name__
+            if callable(val):
+                try:
+                    sig = inspect.signature(val)
+                    preview = f"{type_name}{sig}"
+                except (ValueError, TypeError):
+                    preview = f"{type_name}()"
+            elif isinstance(val, (dict, collections_abc.Mapping)):
+                preview = f"{type_name} ({len(val)} keys)"
+            elif isinstance(
+                val, (list, tuple, collections_abc.Sequence)
+            ) and not isinstance(val, (str, bytes)):
+                preview = f"{type_name} (len={len(val)})"
+            else:
+                r = repr(val)
+                if len(r) > 50:
+                    r = r[:47] + "..."
+                preview = r
+            cached.append(preview)
+            return preview
+        except Exception:
+            cached.append("")
+            return ""
+
+    return get_preview
+
+
+def _make_path_preview(path_text: str) -> Callable[[], str]:
+    cached: list[str] = []
+
+    def get_preview() -> str:
+        if cached:
+            return cached[0]
+        try:
+            full_path = os.path.expanduser(path_text)
+            if os.path.isdir(full_path):
+                preview = "directory"
+            elif os.path.isfile(full_path):
+                size = os.path.getsize(full_path)
+                if size < 1024:
+                    preview = f"file ({size}B)"
+                elif size < 1024 * 1024:
+                    preview = f"file ({size // 1024}KB)"
+                else:
+                    preview = f"file ({size // (1024 * 1024)}MB)"
+            else:
+                preview = ""
+            cached.append(preview)
+            return preview
+        except Exception:
+            cached.append("")
+            return ""
+
+    return get_preview
